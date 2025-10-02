@@ -1,2 +1,11 @@
 .env
-__pycache__
+mongo-data/
+postgres-data/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+.vscode/
+*.swp
+*.DS_Store

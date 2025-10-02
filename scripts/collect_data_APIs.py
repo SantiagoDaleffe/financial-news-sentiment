@@ -6,15 +6,13 @@ import requests
 from datetime import datetime, timedelta
 from pathlib import Path
 from parser_APIs import parse_cryptocompare
-from db import get_mongo_collection
 import logging
+
+articles = []
 
 # paths
 data_path = Path(__file__).resolve().parents[1] / "data" / "raw"
 data_path.mkdir(parents=True, exist_ok=True)
-
-
-articles = get_mongo_collection()
 
 
 def fetch_cryptocompare_day(query="BTC", source="coindesk", date=None, per_day=2):
@@ -48,9 +46,10 @@ def fetch_historical_crypto(query="BTC", source="coindesk", days_back=60, per_da
             raw = fetch_cryptocompare_day(query=query, source=source, date=day, per_day=per_day)
             parsed = [parse_cryptocompare(a) for a in raw]
 
-            unique = [p for p in parsed if p["id"] not in seen_ids]
+            unique = [p for p in parsed if p["_id"] not in seen_ids]
             for p in unique:
-                seen_ids.add(p["id"])
+                seen_ids.add(p["_id"])
+
             
             all_articles.extend(unique)
             print(f"{day.date()} → {len(unique)} nuevos artículos (total {len(all_articles)})")
@@ -60,23 +59,16 @@ def fetch_historical_crypto(query="BTC", source="coindesk", days_back=60, per_da
 
         if len(all_articles) >= max_total:
             break
-        time.sleep(1)
+        time.sleep(0.1)
 
     return all_articles
 
 # saves 
 def save_json(data, source):
-    today = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = data_path / f"{source}_{today}.json"
+    file_path = data_path / f"{source}.json"
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, default=str, indent=2)
     print(f"Saved {len(data)} articles in {file_path}")
-
-def save_mongo(data):
-    if not data:
-        return
-    articles.insert_many(data)
-    print(f"Inserted {len(data)} documents into MongoDB")
 
 
 # main
@@ -93,7 +85,6 @@ def main():
 
         if parsed_coindesk:
             save_json(parsed_coindesk, "coindesk_historical")
-            save_mongo(parsed_coindesk)
             logging.info(f"Coindesk: {len(parsed_coindesk)} artículos")
             all_articles.extend(parsed_coindesk)
         else:
@@ -104,12 +95,11 @@ def main():
 
     try:
         parsed_cointelegraph = fetch_historical_crypto(
-            query="BTC", source="cointelegraph", days_back=1000, per_day=4, max_total=4000
+            query="BTC", source="cointelegraph", days_back=1000, per_day=5, max_total=5000
         )
 
         if parsed_cointelegraph:
             save_json(parsed_cointelegraph, "cointelegraph_historical")
-            save_mongo(parsed_cointelegraph)
             logging.info(f"Cointelegraph: {len(parsed_cointelegraph)} artículos")
             all_articles.extend(parsed_cointelegraph)
         else:
@@ -120,12 +110,11 @@ def main():
 
     deduped = []
     for art in all_articles:
-        if art["id"] not in seen_ids:
-            seen_ids.add(art["id"])
+        if art["_id"] not in seen_ids:
+            seen_ids.add(art["_id"])
             deduped.append(art)
 
     save_json(deduped, "merged_news")
-    save_mongo(deduped) 
     logging.info(f"Total merged (deduped): {len(deduped)} artículos")
 
 if __name__ == "__main__":

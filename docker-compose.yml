@@ -1,0 +1,51 @@
+version: "3.9"
+services:
+  mongo:
+    image: mongo:latest
+    container_name: mongo
+    ports:
+      - "${MONGO_PORT}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - backend
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  etl:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    container_name: etl
+    depends_on:
+      - mongo
+      - postgres
+    networks:
+      - backend
+    volumes:
+      - ./data:/app/data
+      - ./scripts:/app/scripts
+    env_file:
+      - .env
+
+networks:
+  backend:
+
+volumes:
+  mongo-data:
+  postgres-data:

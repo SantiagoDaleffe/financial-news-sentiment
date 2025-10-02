@@ -4,91 +4,51 @@ Este documento describe las fuentes de datos utilizadas en el proyecto, incluyen
 
 ---
 
-## 1. NewsAPI
+## 1. Collector (coindesk).
 
 **Descripción:**  
-*Descripcion de la pagina*:
-Provides access to current and historical news articles from a vast number of sources worldwide. They focus on delivering raw news data for developers to integrate into their applications.
+Coindesk ofrece un feed de noticias financieras y de criptomonedas a través de su API pública. Se utiliza principalmente para recolectar artículos relacionados con Bitcoin y temas asociados. No presenta límites de uso estrictos en la práctica, por lo que resulta adecuada para recolección en cantidad.
 
 **Endpoint principal:**  
-https://newsapi.org/v2/everything
+https://data-api.coindesk.com/news/v1/article/list
+
+**Parámetros principales:**  
+- `search_string`: palabra clave de búsqueda (ej: `"BTC"`).  
+- `lang`: idioma (ej: `"EN"`).  
+- `limit`: cantidad máxima de artículos por request (ej: `8`).  
+- `to_ts`: límite superior en formato timestamp UNIX (ej: fin de un día específico).  
+- `source_key`: fuente de origen (ej: `"coindesk"`, `"cointelegraph"`).  
 
 **Ejemplo de respuesta recortado**
+```json
 {
-  "status": "ok",
-  "totalResults": 26166,
-  "articles": [
-    {
-      "source": {
-        "id": null,
-        "name": "Gizmodo.com"
-      },
-      "author": "Matt Novak",
-      "title": "Bitcoin Flash Crash Roils Crypto Market",
-      "description": "Did a single whale disrupt the crypto ocean?",
-      "url": "https://gizmodo.com/bitcoin-price-flash-crash-ether-thiel-2000647613",
-      "urlToImage": "https://gizmodo.com/app/uploads/2024/08/A-bitcoin-token.jpg",
-      "publishedAt": "2025-08-25T17:50:49Z",
-      "content": "Crypto prices dipped Monday following a so-called flash crash of Bitcoin..."
-    }
-  ]
-}
-
-*Notas*: 
-- El campo principal es `articles`, que devuelve la lista de noticias.
-- Algunos campos como `author`, `description`, `urlToImage` pueden venir vacios.
-- Preferible limitar `pageSize` y paginar si se necesita mas volumen.
-
-## 2. CryptoCompare API
-
-**Descripcion**
-- CryptoCompare proporciona datos de mercado de criptomonedas, incluyendo precios, métricas y también un feed de noticias relacionadas al mundo cripto.
-
-**EndPoint principal (news):**
-https://min-api.cryptocompare.com/data/v2/news/?lang=EN
-
-**Ejemplo de respuesta recortado**
-{
-  "Type": 100,
   "Message": "News list successfully returned",
   "Data": [
     {
-      "id": "50796073",
-      "published_on": 1756353310,
-      "title": "Bitcoin Price Astounding Surge: BTC Rockets Above $112,000",
-      "url": "https://bitcoinworld.co.in/bitcoin-price-surge-4/",
-      "body": "The cryptocurrency market is buzzing with excitement as the Bitcoin price has achieved...",
-      "source": "bitcoinworld",
-      "categories": "CRYPTOCURRENCY|BTC|TRADING|MARKET|BUSINESS"
+      "ID": "123456",
+      "TITLE": "Bitcoin Hits New All-Time High",
+      "SUBTITLE": "BTC price surges past $100,000",
+      "BODY": "Bitcoin reached unprecedented levels today as...",
+      "URL": "https://www.coindesk.com/bitcoin-hits-high",
+      "IMAGE_URL": "https://images.coindesk.com/article.png",
+      "KEYWORDS": "Bitcoin,BTC,Markets",
+      "LANG": "EN",
+      "PUBLISHED_ON": 1756353310,
+      "SOURCE_ID": "coindesk",
+      "SOURCE_DATA": { "NAME": "Coindesk" },
+      "SCORE": 0.98
     }
   ]
 }
 
-*Notas*: 
-- La clave principal es `Data`, que devuelve la lista de articulos.
-- `published_on` viene como timestamp UNIX.
-- Pasa metadatos adicionales como `categories` y `source`
+**Notas:**  
+- La clave principal es `"Data"`, que contiene la lista de artículos.  
+- `"PUBLISHED_ON"` está en timestamp UNIX.  
+- `"SOURCE_DATA.NAME"` indica la fuente real (Coindesk, Cointelegraph, etc.).
+- Algunos campos pueden venir vacíos (`"SUBTITLE"`, `"IMAGE_URL"`, etc.).
 
-## 2. Infobae (Web Scraping)
+## 2. Parser.
+**Descripción:**
+El parser normaliza los artículos obtenidos de la API en un formato estándar, generando un id único y enriqueciendo con metadatos.
 
-**Descripcion**
-- Es un medio digital de noticias, no tiene API publica, asi que por el momento se utiliza scraping del HTML.
-
-**Endpoint principal (seccion economia):**
-https://www.infobae.com/economia/
-
-**Ejemplo de output**
-[
-  "El Gobierno asegura que llegó a un acuerdo con los controladores aéreos y que se levantará la medida de fuerza",
-  "El Gobierno aumentó por quinta vez en el año un recargo en las facturas de gas con el que financia el subsidio a zonas frías",
-  "Ajuste monetario: con tasas altas, el Gobierno colocó bonos para absorber $700.000 millones"
-]
-
-*Notas*:
-- Puede haber artículos repetidos si aparecen en más de una sección, depende del metodo de extraccion de los titulares y enlaces (ejL h2 o a con clases especificas)
-- La estructura del HTML muy probablemente cambie por lo que no hay una estabilidad garantizada.
-- Es recomendable loguear errores en caso de cambios en la pagina.
-
-
-
-
+**Transformaciones principales:**

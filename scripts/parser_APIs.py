@@ -18,8 +18,11 @@ def parse_cryptocompare(article: dict) -> dict:
         text_blob.count("BTC") * 1
     )
 
+    unique_str = title + (article.get("URL") or "") + str(article.get("SOURCE_ID") or "")
+    _id = generate_id(unique_str)
+
     return {
-        "id": generate_id(title),
+        "_id": _id,
         "title": title,
         "description": article.get("SUBTITLE") or "",
         "content": content,
