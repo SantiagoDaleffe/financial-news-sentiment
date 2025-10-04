@@ -1,121 +1,107 @@
-# config
-import os
 import json
 import time
 import requests
+import logging
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from parser_APIs import parse_cryptocompare
-import logging
-
-articles = []
 
 # paths
 data_path = Path(__file__).resolve().parents[1] / "data" / "raw"
 data_path.mkdir(parents=True, exist_ok=True)
 
+BTC_RE = re.compile(r"\b(bitcoin|btc|satoshi)\b", flags=re.IGNORECASE)
 
-def fetch_cryptocompare_day(query="BTC", source="coindesk", date=None, per_day=2):
+def _get_source_name(item):
+    return (item.get("SOURCE_DATA", {}).get("NAME")
+            or item.get("source")
+            or item.get("Source")
+            or item.get("source_name")
+            or "").strip().lower()
+
+def _get_keywords(item):
+    for k in ("KEYWORDS", "keywords", "TAGS", "tags"):
+        val = item.get(k)
+        if not val:
+            continue
+        if isinstance(val, str):
+            return [t.strip().lower() for t in val.split(",") if t.strip()]
+        if isinstance(val, list):
+            return [str(t).strip().lower() for t in val]
+    return []
+
+def _get_text_blob(item):
+    title = (item.get("TITLE") or item.get("title") or "").strip().lower()
+    body = (item.get("BODY") or item.get("CONTENT") or item.get("content") or "").strip().lower()
+    return f"{title} {body}"
+
+def fetch_cryptocompare_day(date=None, per_day=10):
     if date is None:
         date = datetime.utcnow()
-    end_of_day = datetime(date.year, date.month, date.day, 23, 59, 59)
-    to_ts = int(end_of_day.timestamp())
+    to_ts = int(datetime(date.year, date.month, date.day, 23, 59, 59).timestamp())
 
     url = "https://data-api.coindesk.com/news/v1/article/list"
-    params = {
-        "search_string": query,
-        "lang": "EN",
-        "limit": per_day,
-        "to_ts": to_ts,
-        "source_key": source,
-    }
+    params = {"lang": "EN", "limit": per_day, "to_ts": to_ts, "tag": "bitcoin", "source_key": "coindesk"}
     headers = {"Content-type": "application/json; charset=UTF-8"}
+
     resp = requests.get(url, params=params, headers=headers)
     resp.raise_for_status()
-    return resp.json()["Data"]
+    data = resp.json().get("Data", []) or []
+
+    logging.info(f"[fetch_cryptocompare_day] raw total={len(data)}")
+
+    filtered = []
+    for it in data:
+        text_blob = _get_text_blob(it)
+        keywords = _get_keywords(it)
+        
+        # Aceptamos cualquier artículo de la API de Coindesk
+        # que mencione BTC en title/body o en keywords
+        if any("bitcoin" in k or "btc" in k for k in keywords) or BTC_RE.search(text_blob):
+            filtered.append(it)
 
 
-def fetch_historical_crypto(query="BTC", source="coindesk", days_back=60, per_day=2, max_total=100):
+    logging.info(f"[fetch_cryptocompare_day] filtered={len(filtered)}")
+    return filtered
+
+def fetch_historical_coindesk(days_back=60, per_day=10, max_total=1000):
     all_articles = []
     seen_ids = set()
     today = datetime.utcnow()
-
     for i in range(days_back):
         day = today - timedelta(days=i)
         try:
-            raw = fetch_cryptocompare_day(query=query, source=source, date=day, per_day=per_day)
+            raw = fetch_cryptocompare_day(date=day, per_day=per_day)
             parsed = [parse_cryptocompare(a) for a in raw]
 
-            unique = [p for p in parsed if p["_id"] not in seen_ids]
-            for p in unique:
-                seen_ids.add(p["_id"])
+            for p in parsed:
+                if p["_id"] not in seen_ids:
+                    all_articles.append(p)
+                    seen_ids.add(p["_id"])
 
-            
-            all_articles.extend(unique)
-            print(f"{day.date()} → {len(unique)} nuevos artículos (total {len(all_articles)})")
-
+            logging.info(f"{day.date()} → {len(parsed)} artículos procesados (total {len(all_articles)})")
         except Exception as e:
-            print(f"Error {day.date()}: {e}")
-
+            logging.error(f"Error {day.date()}: {e}")
         if len(all_articles) >= max_total:
             break
         time.sleep(0.1)
-
     return all_articles
 
-# saves 
-def save_json(data, source):
-    file_path = data_path / f"{source}.json"
+def save_json(data, fname="coindesk_historical.json"):
+    file_path = data_path / fname
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, default=str, indent=2)
-    print(f"Saved {len(data)} articles in {file_path}")
+    logging.info(f"Saved {len(data)} artículos en {file_path}")
 
-
-# main
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    all_articles = []
-    seen_ids = set()
-
-    try:
-        parsed_coindesk = fetch_historical_crypto(
-            query="BTC", source="coindesk", days_back=1000, per_day=8, max_total=8000
-        )
-
-        if parsed_coindesk:
-            save_json(parsed_coindesk, "coindesk_historical")
-            logging.info(f"Coindesk: {len(parsed_coindesk)} artículos")
-            all_articles.extend(parsed_coindesk)
-        else:
-            logging.warning("No articles found in Coindesk.")
-
-    except Exception as e:
-        logging.error(f"Error fetching from Coindesk: {e}")
-
-    try:
-        parsed_cointelegraph = fetch_historical_crypto(
-            query="BTC", source="cointelegraph", days_back=1000, per_day=5, max_total=5000
-        )
-
-        if parsed_cointelegraph:
-            save_json(parsed_cointelegraph, "cointelegraph_historical")
-            logging.info(f"Cointelegraph: {len(parsed_cointelegraph)} artículos")
-            all_articles.extend(parsed_cointelegraph)
-        else:
-            logging.warning("No articles found in Cointelegraph.")
-
-    except Exception as e:
-        logging.error(f"Error fetching from Cointelegraph: {e}")
-
-    deduped = []
-    for art in all_articles:
-        if art["_id"] not in seen_ids:
-            seen_ids.add(art["_id"])
-            deduped.append(art)
-
-    save_json(deduped, "merged_news")
-    logging.info(f"Total merged (deduped): {len(deduped)} artículos")
+    articles = fetch_historical_coindesk(days_back=1500, per_day=10, max_total=15000)
+    if articles:
+        save_json(articles)
+        logging.info(f"Total final: {len(articles)} artículos")
+    else:
+        logging.warning("No se encontraron artículos.")
 
 if __name__ == "__main__":
     main()
